@@ -1,21 +1,25 @@
 // @ts-nocheck
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Head from "next/head";
 import dynamic from "next/dynamic";
 import { GetStaticProps } from "next";
 import dayjs from "dayjs";
 import { fetchNotecardData } from "../src/lib/notecardData";
+import { fetchMYSQLdata } from "../src/lib/mySQLdata";
 import TempChart from "../src/components/TempChart";
 import VoltageChart from "../src/components/VoltageChart";
 import { convertCelsiusToFahrenheit } from "../src/util/helpers";
 import EventTable from "../src/components/EventTable";
 import styles from "../styles/Home.module.scss";
 
+import fsPromises from 'fs/promises';
+import path from 'path'
+
 type dataProps = {
   uid: string;
   device_uid: string;
   file: string;
-  captured: string;
+  timestamp: string;
   received: string;
   body: {
     temperature: number;
@@ -38,6 +42,12 @@ export default function Home({ data }: { data: dataProps[] }) {
   const MapWithNoSSR = dynamic(() => import("../src/components/Map"), {
     ssr: false,
   });
+  
+  const [likes, setLikes] = useState(0);
+  
+  function handleClick() {
+    setLikes(likes + 1);
+  };
 
   const [lngLatCoords, setLngLatCoords] = useState<number[][]>([]);
   const [lastPosition, setLastPosition] = useState<[number, number]>([
@@ -56,7 +66,24 @@ export default function Home({ data }: { data: dataProps[] }) {
   >([]);
   const [eventTableData, setEventTableData] = useState<dataProps[]>([]);
 
+  /*console.log("Pre effect");
+  console.log(data);
+  console.log(data.length);*/
+
+
+	const [count, setCount] = useState(0);
+
+  /*useEffect(() => {
+    setTimeout(() => {
+      setCount((count) => count + 1);
+    }, 1000);
+	console.log("Use effect");
+  });*/
+
+
+  
   useEffect(() => {
+  
     const lngLatArray: number[][] = [];
     const latLngArray: [number, number][] = [];
     const temperatureDataArray: {
@@ -69,26 +96,28 @@ export default function Home({ data }: { data: dataProps[] }) {
       shortenedDate: string;
       voltage: number;
     }[] = [];
+	
     if (data && data.length > 0) {
+	setCount((count) => count + 1);
       const eventData = [...data].reverse();
       setEventTableData(eventData);
       data
         .sort((a, b) => {
-          return Number(a.captured) - Number(b.captured);
+          return Number(a.timestamp) - Number(b.timestamp);
         })
         .map((event) => {
           let lngLatCoords: number[] = [];
           let latLngCoords: [number, number] = [0, 1];
           const temperatureObj = {
-            date: dayjs(event.captured).format("MMM D, YYYY h:mm A"),
-            shortenedDate: dayjs(event.captured).format("MM/DD/YYYY"),
-            temp: Number(convertCelsiusToFahrenheit(event.body.temperature)),
+            date: dayjs(event.timestamp).format("YYYY-MM-DD, H:mm:ss"),
+            shortenedDate: dayjs(event.timestamp).format("YYYY/MM/DD"),
+            temp: Number(event.body.temperature),
           };
           temperatureDataArray.push(temperatureObj);
           const voltageObj = {
-            date: dayjs(event.captured).format("MMM D, YYYY h:mm A"),
-            shortenedDate: dayjs(event.captured).format("MM/DD/YYYY"),
-            voltage: Number(event.body.voltage.toFixed(2)),
+            date: dayjs(event.timestamp).format("YYYY-MM-DD, H:mm:ss"),
+            shortenedDate: dayjs(event.timestamp).format("YYYY/MM/DD"),
+            voltage: Number(event.body.voltage),
           };
           voltageDataArray.push(voltageObj);
           if (event.gps_location !== null) {
@@ -127,7 +156,7 @@ export default function Home({ data }: { data: dataProps[] }) {
         ];
       }
       setLastPosition(lastCoords);
-      const timestamp = dayjs(lastEvent?.captured).format("MMM D, YYYY h:mm A");
+      const timestamp = dayjs(lastEvent?.timestamp).format("YYYY-MM-DD, H:mm:ss");
       setLatestTimestamp(timestamp);
     }
     setLngLatCoords(lngLatArray);
@@ -147,9 +176,9 @@ export default function Home({ data }: { data: dataProps[] }) {
         columns: [
           {
             Header: "Date",
-            accessor: "captured",
+            accessor: "timestamp",
             Cell: (props: { value: string }) => {
-              const tidyDate = dayjs(props.value).format("MMM D, YY h:mm A");
+              const tidyDate = dayjs(props.value).format("YYYY-MM-DD, H:mm:ss");
               return <span>{tidyDate}</span>;
             },
           },
@@ -178,19 +207,6 @@ export default function Home({ data }: { data: dataProps[] }) {
               );
             },
           },
-          {
-            Header: "Cell Tower Location",
-            accessor: "tower_location",
-            Cell: (row) => {
-              return (
-                <span>
-                  {row.row.original.tower_location.latitude.toFixed(3)}
-                  &#176;,&nbsp;
-                  {row.row.original.tower_location.longitude.toFixed(3)}&#176;
-                </span>
-              );
-            },
-          },
         ],
       },
     ],
@@ -205,9 +221,11 @@ export default function Home({ data }: { data: dataProps[] }) {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       <main className={styles.main}>
-        <h1 className={styles.title}>React Blues Wireless Asset Tracker</h1>
-        <div className={styles.grid}>
-          <TempChart tempData={tempData} />
+        <h1 className={styles.title}>nRF Asset Tracker</h1>
+        
+		
+		<div className={styles.grid}>
+          <EventTable columns={columns} data={eventTableData} />
         </div>
         <div className={styles.map}>
           <MapWithNoSSR
@@ -217,22 +235,32 @@ export default function Home({ data }: { data: dataProps[] }) {
             latestTimestamp={latestTimestamp}
           />
         </div>
+		<div className={styles.grid}>
+          <TempChart tempData={tempData} />
+        </div>
         <div className={styles.grid}>
           <VoltageChart voltageData={voltageData} />
         </div>
-        <div className={styles.grid}>
-          <EventTable columns={columns} data={eventTableData} />
-        </div>
+		<h3>Ive rendered {count} times!</h3>
+        <div>
+		<button onClick={handleClick}>Like({likes})</button>
+		</div>
       </main>
       <footer className={styles.footer}></footer>
     </div>
   );
 }
 
-export const getStaticProps: GetStaticProps = async () => {
+export async function getStaticProps() {
   /* we're able to use Nextjs's ISR (incremental static regneration) 
   revalidate functionality to re-fetch updated map coords and re-render one a regular interval */
-  const data = await fetchNotecardData();
+  const data = await fetchMYSQLdata();
+  /*
+	  const filePath = path.join(process.cwd(), 'empdata.json');
+	  const jsonData = await fsPromises.readFile(filePath);
+	  const data = JSON.parse(jsonData);*/
+	  
+	  
 
   return { props: { data }, revalidate: 120 };
 };
